@@ -1,13 +1,20 @@
 import Product from "../models/productModel.js";
 import Seller from "../models/sellerModel.js";
 import Order from "../models/orderModel.js";
+import dotenv from "dotenv";
+import Stripe from "stripe";
+
+
+dotenv.config();
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
+
 
 // Create a new order and notify seller
 export const createOrder = async (req, res) => {
   try {
-    const { userId, productId, quantity } = req.body;
+    const { userId, productId, quantity, paymentMethod, cardDetails } = req.body;
 
-    if (!userId || !productId || !quantity || quantity <= 0) {
+    if (!userId || !productId || !quantity || quantity <= 0 || !paymentMethod) {
       return res.status(400).json({ message: "Invalid order details" });
     }
 
@@ -21,7 +28,7 @@ export const createOrder = async (req, res) => {
       return res.status(400).json({ message: "Insufficient product quantity available" });
     }
 
-    // Fetch the seller details (optional, to notify the seller)
+    // Fetch the seller details
     const seller = await Seller.findOne({ sellerId: product.sellerId });
     if (!seller) {
       return res.status(404).json({ message: "Seller not found" });
@@ -30,48 +37,57 @@ export const createOrder = async (req, res) => {
     // Calculate total price
     const totalPrice = product.price * quantity;
 
-    // Reduce product quantity
-    product.quantity -= quantity;
-    await product.save();
+    // Handle payment based on the method
+    if (paymentMethod === "card") {
+      if (!cardDetails || !cardDetails.cardholderName) {
+        return res.status(400).json({ message: "Card details are required for card payments." });
+      }
 
-    // Create the order
-    const newOrder = new Order({
-      userId,
-      productId,
-      sellerId: product.sellerId,
-      quantity,
-      totalPrice,
-    });
+      // Create a Stripe payment intent
+      const paymentIntent = await stripe.paymentIntents.create({
+        amount: Math.round(totalPrice * 100), // Convert to cents
+        currency: "usd",
+        payment_method_types: ["card"],
+        metadata: {
+          userId,
+          productId,
+        },
+      });
 
-    await newOrder.save();
+      const clientSecret = paymentIntent.client_secret;
 
-    // Simulate sending a message to the seller
-    const message = {
-      to: seller.email,
-      subject: "New Order Notification",
-      body: `You have received a new order. 
-      Product ID: ${product.productId}
-      Description: ${product.description}
-      Category: ${product.category}
-      Price: $${product.price}
-      Quantity Ordered: ${quantity}
-      Total Order Price: $${totalPrice}
-      `,
-    };
+      return res.status(200).json({
+        message: "Payment intent created. Complete the payment to place the order.",
+        clientSecret,
+      });
+    } else if (paymentMethod === "cash_on_delivery") {
+      // Directly create the order for Cash on Delivery
+      product.quantity -= quantity; // Reduce product stock
+      await product.save();
 
-    // Replace this with actual email service
-    console.log("Message sent to seller:", message);
+      const newOrder = new Order({
+        userId,
+        productId,
+        sellerId: product.sellerId,
+        quantity,
+        totalPrice,
+        orderStatus: "Pending",
+      });
 
-    res.status(201).json({
-      message: "Order placed successfully, seller notified.",
-      order: newOrder,
-    });
+      await newOrder.save();
+
+      return res.status(201).json({
+        message: "Order placed successfully under Cash on Delivery.",
+        order: newOrder,
+      });
+    } else {
+      return res.status(400).json({ message: "Invalid payment method." });
+    }
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: "Internal server error" });
+    console.error("Error creating order:", error);
+    res.status(500).json({ message: "Internal server error." });
   }
 };
-
 
 
 
