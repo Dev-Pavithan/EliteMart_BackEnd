@@ -1,33 +1,62 @@
 import Product from "../models/productModel.js";
 import cloudinary from "cloudinary";
+import multer from 'multer';
+
+
+// Configure Multer for file uploads
+const upload = multer({ dest: 'uploads/' }); // Files will be stored in the 'uploads' directory
 
 // Seller - Create a new product
 export const createProduct = async (req, res) => {
-  try {
-    const { sellerId, category, image, description, price, quantity } = req.body;
-
-    if (!sellerId || !category || !image || !description || !price || quantity == null) {
-      return res.status(400).json({ message: "All fields are required, including quantity" });
+  // Use Multer middleware to handle the file upload
+  upload.single('image')(req, res, async (err) => {
+    if (err) {
+      return res.status(400).json({ message: 'File upload error', error: err.message });
     }
 
-    const newProduct = new Product({
-      sellerId,
-      category,
-      image,
-      description,
-      price,
-      quantity,
-    });
+    try {
+      // Extract form data from the request body
+      const { sellerId, category, description, price, quantity } = req.body;
 
-    const savedProduct = await newProduct.save();
-    res.status(201).json({
-      message: "Product created successfully",
-      product: savedProduct,
-    });
-  } catch (error) {
-    console.error("Error creating product:", error.message);
-    res.status(500).json({ message: "Server error while creating product" });
-  }
+      // Convert `quantity` and `price` to numbers for proper validation
+      const numericQuantity = parseInt(quantity, 10);
+      const numericPrice = parseFloat(price);
+
+      // Validate required fields
+      if (
+        !sellerId ||
+        !category ||
+        !description ||
+        isNaN(numericPrice) ||
+        isNaN(numericQuantity) ||
+        !req.file
+      ) {
+        return res.status(400).json({ message: "All fields are required, including quantity and image" });
+      }
+
+      // Create a new product instance
+      const newProduct = new Product({
+        sellerId,
+        category,
+        description,
+        price: numericPrice,
+        quantity: numericQuantity,
+        image: req.file.path, // Store the file path in the database
+      });
+
+      // Save the product to the database
+      const savedProduct = await newProduct.save();
+
+      // Respond with success
+      res.status(201).json({
+        message: "Product created successfully",
+        product: savedProduct,
+      });
+    } catch (error) {
+      console.error("Error creating product:", error.message);
+      res.status(500).json({ message: "Server error while creating product" });
+    }
+  });
 };
 
 

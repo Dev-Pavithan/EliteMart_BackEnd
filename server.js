@@ -47,6 +47,9 @@ app.use("/api", orderRoutes);
 
 
 
+app.get('/test', (req, res) => {
+  res.send('<h1>backend Hosted</h1>');
+});
 
 // Error Middleware
 app.use(errorHandler);

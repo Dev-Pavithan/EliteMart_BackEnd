@@ -32,7 +32,7 @@ const productSchema = new mongoose.Schema(
     quantity: {
       type: Number,
       required: true,
-      min: [0, "Quantity cannot be less than 0"], // Prevent negative quantity
+      min: [0, "Quantity cannot be less than 0"], 
     },
     state: {
       type: String,
